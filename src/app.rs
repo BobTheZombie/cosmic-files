@@ -139,6 +139,7 @@ pub enum Action {
     NewFile,
     NewFolder,
     Open,
+    OpenAsRoot,
     OpenInNewTab,
     OpenInNewWindow,
     OpenItemLocation,
@@ -210,6 +211,7 @@ impl Action {
             Action::NewFile => Message::NewItem(entity_opt, false),
             Action::NewFolder => Message::NewItem(entity_opt, true),
             Action::Open => Message::TabMessage(entity_opt, tab::Message::Open(None)),
+            Action::OpenAsRoot => Message::OpenAsRoot(entity_opt),
             Action::OpenInNewTab => Message::OpenInNewTab(entity_opt),
             Action::OpenInNewWindow => Message::OpenInNewWindow(entity_opt),
             Action::OpenItemLocation => Message::OpenItemLocation(entity_opt),
@@ -348,6 +350,7 @@ pub enum Message {
     Notification(Arc<Mutex<notify_rust::NotificationHandle>>),
     NotifyEvents(Vec<DebouncedEvent>),
     NotifyWatcher(WatcherWrapper),
+    OpenAsRoot(Option<Entity>),
     OpenTerminal(Option<Entity>),
     OpenInNewTab(Option<Entity>),
     OpenInNewWindow(Option<Entity>),
@@ -3336,6 +3339,32 @@ impl Application for App {
                     log::warn!("message did not contain notify watcher");
                 }
             },
+            Message::OpenAsRoot(entity_opt) => {
+                if let Ok(exe) = env::current_exe() {
+                    for path in self
+                        .selected_paths(entity_opt)
+                        .into_iter()
+                        .filter(|path| path.is_dir())
+                    {
+                        let status = process::Command::new("pkexec")
+                            .arg(&exe)
+                            .arg("--no-daemon")
+                            .arg(&path)
+                            .spawn();
+
+                        if let Err(err) = status {
+                            log::error!(
+                                "failed to open {:?} as root with {:?}: {}",
+                                path,
+                                exe,
+                                err
+                            );
+                        }
+                    }
+                } else {
+                    log::error!("failed to determine current executable path");
+                }
+            }
             Message::OpenTerminal(entity_opt) => {
                 if let Some(terminal) = self.mime_app_cache.terminal() {
                     let mut paths = Vec::new();

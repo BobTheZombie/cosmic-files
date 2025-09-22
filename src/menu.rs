@@ -186,6 +186,7 @@ pub fn context_menu<'a>(
                     if selected_dir == 1 {
                         children
                             .push(menu_item(fl!("open-in-terminal"), Action::OpenTerminal).into());
+                        children.push(menu_item(fl!("open-as-root"), Action::OpenAsRoot).into());
                     }
                 }
                 if matches!(tab.location, Location::Search(..) | Location::Recents) {
