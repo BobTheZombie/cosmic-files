@@ -340,6 +340,7 @@ pub enum Message {
     NetworkDriveOpenTabAfterMount {
         location: Location,
     },
+    UnmountDrive(MounterKey, MounterItem),
     NetworkDriveSubmit,
     NetworkResult(MounterKey, String, Result<bool, String>),
     NewItem(Option<Entity>, bool),
@@ -431,6 +432,7 @@ pub enum Message {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ContextPage {
     About,
+    Drives,
     EditHistory,
     NetworkDrive,
     Preview(Option<Entity>, PreviewKind),
@@ -588,6 +590,9 @@ impl DialogPages {
 }
 
 pub struct FavoriteIndex(usize);
+
+#[derive(Clone)]
+pub struct ContextNav(ContextPage);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MimeAppMatch {
@@ -1491,6 +1496,14 @@ impl App {
                     ))
                     .divider_above()
             });
+
+            nav_model = nav_model.insert(|b| {
+                b.text(fl!("mounted-drives"))
+                    .icon(icon::icon(
+                        icon::from_name("drive-harddisk-symbolic").size(16).handle(),
+                    ))
+                    .data(ContextNav(ContextPage::Drives))
+            });
         }
 
         // Collect all mounter items
@@ -1616,6 +1629,111 @@ impl App {
         Task::none()
     }
 
+    fn drives_drawer(&self) -> Element<'_, Message> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            space_s,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let mut mounted: Vec<(MounterKey, MounterItem)> = self
+            .mounter_items
+            .iter()
+            .flat_map(|(key, items)| {
+                items
+                    .iter()
+                    .filter(|item| item.is_mounted())
+                    .map(move |item| (*key, item.clone()))
+            })
+            .collect();
+
+        mounted.sort_by(|a, b| LANGUAGE_SORTER.compare(&a.1.name(), &b.1.name()));
+
+        let mut list = widget::column::with_capacity(mounted.len().max(1)).spacing(space_xs);
+
+        if mounted.is_empty() {
+            let empty = widget::layer_container(
+                widget::row::with_children(vec![
+                    widget::text::body(fl!("no-mounted-drives"))
+                        .width(Length::Fill)
+                        .into(),
+                ])
+                .align_y(Alignment::Center),
+            )
+            .padding([space_xxs, space_xs])
+            .layer(cosmic_theme::Layer::Secondary)
+            .apply(widget::container)
+            .width(Length::Fill);
+            list = list.push(empty.into());
+        } else {
+            for (mounter_key, item) in mounted.into_iter() {
+                let item_clone = item.clone();
+                let icon_handle = item
+                    .icon(false)
+                    .or_else(|| item.icon(true))
+                    .unwrap_or_else(|| icon::from_name("drive-harddisk").size(32).handle());
+                let icon = icon::icon(icon_handle).size(32);
+
+                let name = item.name();
+                let uri = item.uri();
+                let path_opt = item.path();
+                let location = Location::Network(uri.clone(), name.clone(), path_opt.clone());
+                let subtitle = path_opt
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or(uri.clone());
+
+                let info = widget::row::with_children(vec![
+                    icon.into(),
+                    widget::column::with_children(vec![
+                        widget::text::heading(name).into(),
+                        widget::text::body(subtitle).into(),
+                    ])
+                    .spacing(space_xxs)
+                    .width(Length::Fill)
+                    .into(),
+                ])
+                .align_y(Alignment::Center)
+                .spacing(space_s);
+
+                let open = widget::button::custom(info)
+                    .width(Length::Fill)
+                    .padding(space_xs)
+                    .class(theme::Button::Text)
+                    .on_press(Message::TabMessage(None, tab::Message::Location(location)));
+
+                let eject = widget::tooltip(
+                    widget::button::icon(icon::from_name("media-eject-symbolic"))
+                        .padding(space_xs)
+                        .on_press(Message::UnmountDrive(mounter_key, item_clone)),
+                    widget::text::body(fl!("eject")),
+                    widget::tooltip::Position::Top,
+                );
+
+                let row = widget::row::with_children(vec![open.into(), eject.into()])
+                    .align_y(Alignment::Center)
+                    .spacing(space_xs);
+
+                let entry = widget::layer_container(row)
+                    .padding([space_xxs, space_xs])
+                    .layer(cosmic_theme::Layer::Secondary)
+                    .apply(widget::container)
+                    .width(Length::Fill);
+
+                list = list.push(entry.into());
+            }
+        }
+
+        widget::column::with_children(vec![
+            widget::text::heading(fl!("mounted-drives")).into(),
+            list.into(),
+        ])
+        .spacing(space_xs)
+        .into()
+    }
+
     fn network_drive(&self) -> Element<'_, Message> {
         let cosmic_theme::Spacing {
             space_xxs, space_m, ..
@@ -1639,6 +1757,7 @@ impl App {
                 table = table.push(widget::divider::horizontal::light());
             }
         }
+
         widget::column::with_children(vec![
             widget::text::body(fl!("network-drive-description")).into(),
             table.into(),
@@ -2378,6 +2497,9 @@ impl Application for App {
                     .mount(data.1.clone())
                     .map(|_| cosmic::action::none());
             }
+        }
+        if let Some(context_nav) = self.nav_model.data::<ContextNav>(entity) {
+            return self.update(Message::ToggleContextPage(context_nav.0.clone()));
         }
         Task::none()
     }
@@ -4359,6 +4481,11 @@ impl Application for App {
                     }
                 }
             }
+            Message::UnmountDrive(mounter_key, item) => {
+                if let Some(mounter) = MOUNTERS.get(&mounter_key) {
+                    return mounter.unmount(item).map(|_| cosmic::action::none());
+                }
+            }
             Message::NavBarContext(entity) => {
                 // Close location editing if enabled
                 let tab_entity = self.tab_model.active();
@@ -4698,6 +4825,11 @@ impl Application for App {
                 Message::LaunchUrl,
                 Message::ToggleContextPage(ContextPage::About),
             ),
+            ContextPage::Drives => context_drawer::context_drawer(
+                self.drives_drawer(),
+                Message::ToggleContextPage(ContextPage::Drives),
+            )
+            .title(fl!("mounted-drives")),
             ContextPage::EditHistory => context_drawer::context_drawer(
                 self.edit_history(),
                 Message::ToggleContextPage(ContextPage::EditHistory),
