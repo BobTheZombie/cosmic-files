@@ -19,7 +19,7 @@ use mime_guess::Mime;
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{
-    app::{Action, Message},
+    app::{self, Action, Message},
     config::Config,
     fl,
     tab::{self, HeadingOptions, Location, LocationMenuAction, Tab},
@@ -185,6 +185,9 @@ pub fn context_menu<'a>(
                 }
                 if selected == 1 {
                     children.push(menu_item(fl!("menu-open-with"), Action::OpenWith).into());
+                    if selected_dir == 1 && app::elevation_supported() {
+                        children.push(menu_item(fl!("open-as-root"), Action::OpenAsRoot).into());
+                    }
                     if selected_dir == 1 {
                         children
                             .push(menu_item(fl!("open-in-terminal"), Action::OpenTerminal).into());
