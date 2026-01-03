@@ -39,6 +39,7 @@ trash = { git = "https://github.com/jackpot51/trash-rs.git", branch = "cosmic" }
 url = "2.5"
 walkdir = "2.5.0"
 wayland-client = { version = "0.31.11", optional = true }
+which = "7.0.0"
 xdg = { version = "3.0", optional = true }
 xdg-mime = { git = "https://github.com/ebassi/xdg-mime-rs" }
 # Compression

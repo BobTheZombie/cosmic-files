@@ -1611,6 +1611,7 @@ pub enum Command {
     ExecEntryAction(cosmic::desktop::DesktopEntryData, usize),
     Iced(TaskWrapper),
     OpenFile(Vec<PathBuf>),
+    OpenAsRoot(PathBuf),
     OpenInNewTab(PathBuf),
     OpenInNewWindow(PathBuf),
     OpenTrash,
@@ -1659,6 +1660,7 @@ pub enum Message {
     Location(Location),
     LocationUp,
     Open(Option<PathBuf>),
+    OpenAsRoot,
     Reload,
     RightClick(Option<Point>, Option<usize>),
     MiddleClick(usize),
@@ -3809,6 +3811,19 @@ impl Tab {
 
                             commands.push(Command::OpenFile(open_files));
                         }
+                    }
+                }
+            }
+            Message::OpenAsRoot => {
+                if let Some(items) = self.items_opt.as_ref() {
+                    if let Some(path) = items
+                        .iter()
+                        .find(|item| item.selected && item.metadata.is_dir())
+                        .and_then(|item| item.location_opt.as_ref())
+                        .and_then(Location::path_opt)
+                        .cloned()
+                    {
+                        commands.push(Command::OpenAsRoot(path));
                     }
                 }
             }

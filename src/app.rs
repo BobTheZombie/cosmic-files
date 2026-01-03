@@ -122,6 +122,12 @@ static MOUNT_ERROR_TRY_AGAIN_BUTTON_ID: LazyLock<widget::Id> =
 pub(crate) static REPLACE_BUTTON_ID: LazyLock<widget::Id> =
     LazyLock::new(|| widget::Id::new("replace-button"));
 
+static ELEVATION_SUPPORTED: LazyLock<bool> = LazyLock::new(|| which::which("pkexec").is_ok());
+
+pub(crate) fn elevation_supported() -> bool {
+    *ELEVATION_SUPPORTED
+}
+
 #[derive(Clone, Debug)]
 pub enum Mode {
     App,
@@ -170,6 +176,7 @@ pub enum Action {
     NewFile,
     NewFolder,
     Open,
+    OpenAsRoot,
     OpenMount(PathBuf),
     OpenInNewTab,
     OpenInNewWindow,
@@ -240,6 +247,7 @@ impl Action {
             Self::NewFile => Message::NewItem(entity_opt, false),
             Self::NewFolder => Message::NewItem(entity_opt, true),
             Self::Open => Message::TabMessage(entity_opt, tab::Message::Open(None)),
+            Self::OpenAsRoot => Message::TabMessage(entity_opt, tab::Message::OpenAsRoot),
             Self::OpenMount(path) => {
                 Message::TabMessage(entity_opt, tab::Message::OpenMount(path.clone()))
             }
@@ -843,6 +851,32 @@ impl App {
         }
 
         Task::batch(tasks)
+    }
+
+    fn open_directory_as_root(&self, path: &Path) -> Task<Message> {
+        if !elevation_supported() {
+            return Task::none();
+        }
+
+        match env::current_exe() {
+            Ok(exe) => {
+                let mut command = process::Command::new("pkexec");
+                command.arg(exe).arg(path);
+
+                if let Err(err) = spawn_detached(&mut command) {
+                    log::warn!(
+                        "failed to open {} as root with pkexec: {}",
+                        path.display(),
+                        err
+                    );
+                }
+            }
+            Err(err) => {
+                log::warn!("failed to resolve current executable for elevation: {err}");
+            }
+        }
+
+        Task::none()
     }
 
     fn launch_desktop_entries(paths: &[impl AsRef<Path>]) {
@@ -4049,6 +4083,9 @@ impl Application for App {
                             commands.push(iced_command.0.map(move |x| {
                                 cosmic::action::app(Message::TabMessage(Some(entity), x))
                             }));
+                        }
+                        tab::Command::OpenAsRoot(path) => {
+                            commands.push(self.open_directory_as_root(&path));
                         }
                         tab::Command::OpenFile(paths) => commands.push(self.open_file(&paths)),
                         tab::Command::OpenInNewTab(path) => {
