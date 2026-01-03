@@ -43,7 +43,7 @@ macro_rules! menu_button {
     );
 }
 
-const fn menu_button_optional(
+fn menu_button_optional(
     label: String,
     action: Action,
     enabled: bool,
@@ -85,6 +85,8 @@ pub fn context_menu<'a>(
         )
         .on_press(tab::Message::ContextAction(action))
     };
+
+    let mounted_drives = tab.mounted_drives();
 
     let (sort_name, sort_direction, _) = tab.sort_options();
     let sort_item = |label, variant| {
@@ -350,6 +352,26 @@ pub fn context_menu<'a>(
                 children.push(sort_item(fl!("sort-by-trashed"), HeadingOptions::TrashedOn));
                 children.push(sort_item(fl!("sort-by-size"), HeadingOptions::Size));
             }
+        }
+    }
+
+    if !mounted_drives.is_empty() {
+        children.push(divider::horizontal::light().into());
+
+        let cosmic = theme::active().cosmic();
+        children.push(
+            container(text::caption(fl!("mounted-drives")))
+                .padding([cosmic.spacing.space_xxs, 16])
+                .width(Length::Fill)
+                .into(),
+        );
+
+        for (name, path) in mounted_drives {
+            children.push(
+                menu_button!(text::body(name))
+                    .on_press(tab::Message::ContextAction(Action::OpenMount(path)))
+                    .into(),
+            );
         }
     }
 

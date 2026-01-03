@@ -88,7 +88,7 @@ use crate::{
     localize::{LANGUAGE_SORTER, LOCALE},
     menu, mime_app,
     mime_icon::{mime_for_path, mime_icon},
-    mounter::MOUNTERS,
+    mounter::{MOUNTERS, MounterItem, MounterItems, MounterKey},
     mouse_area,
     operation::{Controller, OperationError},
     thumbnail_cacher::{CachedThumbnail, ThumbnailCacher, ThumbnailSize},
@@ -1643,6 +1643,7 @@ pub enum Message {
     EditLocationSubmit,
     OpenInNewTab(PathBuf),
     EmptyTrash,
+    OpenMount(PathBuf),
     #[cfg(feature = "desktop")]
     ExecEntryAction(Option<PathBuf>, usize),
     Gallery(bool),
@@ -2581,6 +2582,7 @@ pub struct Tab {
     pub gallery: bool,
     pub(crate) parent_item_opt: Option<Item>,
     pub(crate) items_opt: Option<Vec<Item>>,
+    mounter_items: Vec<MounterItem>,
     pub dnd_hovered: Option<(Location, Instant)>,
     pub(crate) scrollable_id: widget::Id,
     select_focus: Option<usize>,
@@ -2702,6 +2704,7 @@ impl Tab {
             gallery: false,
             parent_item_opt: None,
             items_opt: None,
+            mounter_items: Vec::new(),
             scrollable_id,
             select_focus: None,
             select_range: None,
@@ -2742,6 +2745,34 @@ impl Tab {
             }
         }
         self.items_opt = Some(items);
+    }
+
+    pub fn set_mounter_items(&mut self, mounter_items: &FxHashMap<MounterKey, MounterItems>) {
+        let mut mounts: Vec<MounterItem> = mounter_items
+            .values()
+            .flat_map(|items| items.iter().cloned())
+            .collect();
+
+        mounts.retain(|item| item.is_mounted() && item.path().is_some());
+        mounts.sort_by(|a, b| LANGUAGE_SORTER.compare(&a.name(), &b.name()));
+
+        self.mounter_items = mounts;
+    }
+
+    pub fn mounted_drives(&self) -> Vec<(String, PathBuf)> {
+        let show_mounted_drives = match self.location {
+            Location::Desktop(_, _, desktop_config) => desktop_config.show_mounted_drives,
+            _ => true,
+        };
+
+        if !show_mounted_drives {
+            return Vec::new();
+        }
+
+        self.mounter_items
+            .iter()
+            .filter_map(|item| item.path().map(|path| (item.name(), path)))
+            .collect()
     }
 
     pub fn cut_selected(&mut self) {
@@ -3779,6 +3810,13 @@ impl Tab {
                             commands.push(Command::OpenFile(open_files));
                         }
                     }
+                }
+            }
+            Message::OpenMount(path) => {
+                if path.is_dir() {
+                    cd = Some(Location::Path(path));
+                } else {
+                    commands.push(Command::OpenFile(vec![path]));
                 }
             }
             Message::Reload => {

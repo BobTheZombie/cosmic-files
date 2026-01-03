@@ -139,7 +139,7 @@ pub struct Flags {
     pub uris: Vec<url::Url>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     About,
     AddToSidebar,
@@ -170,6 +170,7 @@ pub enum Action {
     NewFile,
     NewFolder,
     Open,
+    OpenMount(PathBuf),
     OpenInNewTab,
     OpenInNewWindow,
     OpenItemLocation,
@@ -206,7 +207,7 @@ pub enum Action {
 }
 
 impl Action {
-    const fn message(&self, entity_opt: Option<Entity>) -> Message {
+    fn message(&self, entity_opt: Option<Entity>) -> Message {
         match self {
             Self::About => Message::ToggleContextPage(ContextPage::About),
             Self::AddToSidebar => Message::AddToSidebar(entity_opt),
@@ -239,6 +240,9 @@ impl Action {
             Self::NewFile => Message::NewItem(entity_opt, false),
             Self::NewFolder => Message::NewItem(entity_opt, true),
             Self::Open => Message::TabMessage(entity_opt, tab::Message::Open(None)),
+            Self::OpenMount(path) => {
+                Message::TabMessage(entity_opt, tab::Message::OpenMount(path.clone()))
+            }
             Self::OpenInNewTab => Message::OpenInNewTab(entity_opt),
             Self::OpenInNewWindow => Message::OpenInNewWindow(entity_opt),
             Self::OpenItemLocation => Message::OpenItemLocation(entity_opt),
@@ -1081,6 +1085,7 @@ impl App {
                 tab::Mode::Desktop
             }
         };
+        tab.set_mounter_items(&self.mounter_items);
 
         let entity = self
             .tab_model
@@ -3128,6 +3133,12 @@ impl Application for App {
                 // Update nav bar
                 //TODO: this could change favorites IDs while they are in use
                 self.update_nav_model();
+
+                for entity in self.tab_model.iter() {
+                    if let Some(tab) = self.tab_model.data_mut::<Tab>(entity) {
+                        tab.set_mounter_items(&self.mounter_items);
+                    }
+                }
 
                 // Update desktop tabs
                 commands.push(self.update_desktop());
